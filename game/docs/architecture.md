@@ -23,7 +23,7 @@
 | `scenario/` | 首个竖切的初始状态、事件脚本、可选行动定义和教程阶段数据。 |
 | `application/` | UI 与 sim 之间的用例层，接收玩家命令，调用 sim，产生 projection 和持久化请求。 |
 | `projections/` | 把内部状态转成 UI 可消费的只读视图，包括状态栏、任务列表、评估报告和风险列表。 |
-| `persistence/` | 存档读写、`schemaVersion`、迁移和校验。 |
+| `persistence/` | 存档读写、版本识别、迁移和校验。 |
 | `ui/` | React 组件、页面布局、交互状态和输入事件。 |
 | `tests/` | Vitest 测试，覆盖 sim 规则、projection、迁移和关键教程流程。 |
 
@@ -57,6 +57,14 @@ scheduled event 是已经进入事件队列、会在指定整数游戏日触发�
 
 command action 可以创建 scheduled event。scheduled event 触发后可以改变状态、创建警报、要求自动暂停，或解锁下一组选项。
 
+scheduled event 使用稳定排序键，依次比较：
+
+1. `dueDay`。
+2. `priority`，其高低关系由对应规则版本明确。
+3. `sequenceId`。
+
+`sequenceId` 是 sim 在事件创建时分配的单调递增整数。多个事件在同一天、同一优先级时，按 `sequenceId` 从小到大执行；sequence counter 必须进入存档。事件创建和执行不得依赖对象遍历顺序、数组偶然插入顺序或系统时间，并且在相同 seed、相同命令序列和相同 `rulesVersion` 下必须可复现。
+
 ## 时间规则
 
 - `time` 是核心约束，但不是可消费数字资源。
@@ -69,7 +77,7 @@ command action 可以创建 scheduled event。scheduled event 触发后可以改
 
 所有随机都必须来自可序列化的 seeded RNG。RNG state 是存档的一部分。
 
-模拟核心禁止使用 `Math.random()`。测试应覆盖关键随机路径，确保相同初始 seed、相同命令序列和相同版本规则能得到可解释的结果。
+模拟核心禁止使用 `Math.random()`。测试应覆盖关键随机路径，确保相同初始 seed、相同命令序列和相同 `rulesVersion` 能得到可解释的结果。
 
 如果后续需要与 UI 动效随机分离，UI 随机不能反向影响 sim 状态。
 
@@ -101,17 +109,21 @@ UI 只消费 projection，不直接读取和任意修改内部状态。React 组
 
 ## 存档与迁移
 
-存档必须包含 `schemaVersion`。首版迁移方向是从旧 schema 向当前 schema 迁移；不要求当前版本向旧版本导出。
+存档必须同时包含 `schemaVersion` 和 `rulesVersion`。`schemaVersion` 表示存档数据结构版本，`rulesVersion` 表示模拟规则版本；scenario 仍保留自己的标识和版本。
+
+首版迁移方向是从旧 schema 向当前 schema 迁移；不要求当前版本向旧版本导出。读取存档时必须能识别 `rulesVersion` 不匹配，不得静默套用当前规则。本阶段不要求实现跨 `rulesVersion` 的完整重放兼容，也不要求存档保存全部玩家聊天或 UI 操作。
 
 迁移代码应尽量小步、可测试、可审阅。迁移只修正数据结构，不借迁移改变已经确认的设定含义。
 
 存档至少需要保存：
 
 - schemaVersion。
+- rulesVersion。
 - scenario 标识与版本。
 - 当前整数 game day。
 - sim 内部状态。
 - event queue。
+- event sequence counter。
 - seeded RNG state。
 - 已触发或已完成的教程节点。
 
