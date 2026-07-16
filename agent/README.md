@@ -19,6 +19,10 @@
 - `site-maintainer.md` - 处理 Quartz、构建、部署和预览。
 - `agent-rule-maintainer.md` - 维护 `agent/` 和 Agent 规则。
 - `reviewer.md` - 做审阅而非直接修改。
+- `game-designer.md` - 规划教程流程、玩家选择、scenario 边界和临时平衡方案。
+- `simulation-engineer.md` - 实现纯模拟、事件队列、RNG、projection、存档和相关测试。
+- `ui-engineer.md` - 实现 React UI、application 接线、交互和可用性。
+- `game-reviewer.md` - 独立审阅游戏规格、实现、测试、可玩性和架构边界。
 
 ## 参考文件
 
