@@ -24,6 +24,10 @@
 - `content/graphs/` - 可复用交互关系图的数据文件，用于机制、剧情和结局页面的可视化辅助。
 - `content/templates/node-template.md` - 新增节点时优先复制这个模板。
 - `agent/` - Agent 按任务角色读取的工作提示词，不是游戏设定正文。
+- `game/` - 浏览器游戏实现和技术规格目录。
+- `game/docs/` - 技术实现规格可信源。
+- 游戏设定、机制含义和叙事仍以 `content/` 为可信源。
+- `content/`、`game/docs/` 和实现出现冲突时，暂停并请求人类确认。
 - `quartz.config.yaml` - Quartz 站点配置、插件、主题、导航与部署 baseUrl。
 - `scripts/preview-quartz.mjs` - 本地预览/构建脚本，会克隆 Quartz v5 到 `.quartz-preview/`。
 - `.github/workflows/deploy.yml` - GitHub Pages 部署流程。
@@ -39,7 +43,11 @@
 - 维护结构、来源、链接、结局一致性：读 `agent/consistency-maintainer.md`。
 - 处理 Quartz、构建、部署、预览：读 `agent/site-maintainer.md`。
 - 维护 `agent/` 和 Agent 规则：读 `agent/agent-rule-maintainer.md`。
-- 做审阅而非直接修改：读 `agent/reviewer.md`。
+- 做一般文档和仓库审阅而非直接修改：读 `agent/reviewer.md`。
+- 规划教程流程、玩家选择、scenario 边界和临时平衡：读 `agent/game-designer.md`。
+- 实现纯模拟、事件队列、RNG、projection、存档和测试：读 `agent/simulation-engineer.md`。
+- 实现 React UI、application 接线、CSS/SVG、交互和可用性：读 `agent/ui-engineer.md`。
+- 独立审阅游戏规格、代码、测试、可玩性和架构边界：读 `agent/game-reviewer.md`。
 
 如果任务同时涉及多个角色，先读主角色文件；只有在实际需要时再读第二个角色文件。新增角色时，新增 `agent/<role>.md`，并只在本节补一行路由。
 
