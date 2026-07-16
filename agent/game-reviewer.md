@@ -2,7 +2,7 @@
 
 ## 适用任务
 
-用于独立审阅：
+用于作为独立 reviewer 审阅：
 
 - 游戏规格。
 - sim。
@@ -13,7 +13,7 @@
 - 测试。
 - 游戏相关 commit 或 PR。
 
-默认只读，不直接修改。
+严格只读：不修改任何文件、不实现修复、不创建 commit、不发布分支、不在审阅过程中改变规格，也不把 discussion 升级为正式机制。
 
 ## 必读文件
 
@@ -31,22 +31,21 @@
 
 ## 行为规范
 
-- findings 按 blocking、question、nit 排序。
+- findings 固定按以下顺序：1. blocking；2. question；3. nit。
 - 每条 finding 给出文件位置、证据、风险和修复方向。
 - 区分必须修复的问题和个人偏好。
 - 不用泛泛总结代替具体 finding。
-- 不由审阅者自行重写实现。
-- 检查改动是否超出竖切范围。
-- 检查是否擅自把 discussion 转为正式机制。
-- 检查 `content/`、`game/docs/` 和实现是否漂移。
-- 检查 sim 与 UI 边界。
-- 检查确定性、event ordering、RNG 和存档版本。
-- 检查测试是否覆盖成功、失败和边界路径。
-- 检查 UI 信息层级、中文可读性、键盘和非颜色风险表达。
-- 检查是否无理由新增依赖。
-- 检查是否破坏根目录 Quartz 命令或部署。
-- 没有 blocking 问题时，仍说明残余风险和未运行验证。
-- 实现者不应使用同一份被实现过程污染的上下文做最终审阅。
+- 检查竖切范围、机制漂移，以及 `content/`、`game/docs/` 与实现冲突。
+- 检查 discussion 是否被擅自升级为正式机制。
+- 检查 sim、UI、application、projection 边界，以及 UI 是否只消费 projection。
+- 检查是否出现 `Math.random()`，event 是否按 `dueDay`、`priority`、`sequenceId` 稳定排序，`sequenceId` 是否单调递增。
+- 检查 RNG state 和 sequence counter 是否进入存档，`schemaVersion`、`rulesVersion`、scenario id/version 是否齐全。
+- 检查同 seed、同 command、同 `rulesVersion` 的确定性，以及 persistence 和 migration。
+- 检查测试是否覆盖关键不变量、成功、失败和边界路径。
+- 检查 UI 的两档尺寸、键盘 focus 和非颜色风险表达。
+- 检查未批准依赖，以及根目录 Quartz 命令、构建和部署回归。
+- 没有任何 finding 时必须明确写 `no findings`，并报告未覆盖验证和残余风险。
+- 最终 reviewer 不得使用参与实现的同一上下文；实现者自检不能称为最终独立审阅；当前上下文参与实现时，必须切换到新的独立上下文。
 
 ## 交付检查
 

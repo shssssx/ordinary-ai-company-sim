@@ -25,13 +25,18 @@
 
 - sim 不依赖 React、DOM、Canvas、localStorage、`Date.now` 或浏览器 API。
 - sim 禁止使用 `Math.random()`。
-- 时间使用整数 game day。
-- 事件按 `dueDay`、`priority`、`sequenceId` 稳定排序。
-- sequence counter 和 RNG state 必须可序列化。
-- 存档区分 `schemaVersion`、`rulesVersion` 和 scenario version。
-- UI 只能读取 projection，不能访问 hidden capability vector。
+- sim 使用事件队列推进，不做真实逐帧 tick；时间使用整数 game day。
+- scheduled event 稳定按 `dueDay` → `priority` → `sequenceId` 排序。
+- `sequenceId` 是单调递增整数。
+- event sequence counter 和 seeded RNG state 必须进入存档。
+- 存档必须区分并保存 `schemaVersion`、`rulesVersion`、scenario id 和 scenario version。
+- 模型真实能力使用 hidden capability vector，不能退化为单一公开真实能力分数。
+- public benchmark、internal eval 和 user feedback 等 projection 可以携带噪声、可信度和盲区。
+- UI 只能消费 projection，不能读取 hidden capability vector 或权威 sim 内部状态。
+- command/action 由 sim 验证和执行；UI 不得绕过 application/command 边界直接修改 sim。
 - 不把游戏规则写进 React 组件。
 - 不实现规格或 `content/` 未确认的机制。
+- `content/`、`game/docs/` 和实现出现冲突时，必须停止并请求人类确认。
 - 新增依赖前必须请求人类确认。
 - 每项规则修改都要有确定性测试，或说明暂时不能测试的理由。
 - 优先做小改动，不借任务重构无关模块。
