@@ -1,0 +1,30 @@
+{
+  "name": "ordinary-ai-company-sim-game",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "engines": {
+    "node": "^22.12.0 || >=24.0.0",
+    "npm": ">=10.9.2"
+  },
+  "dependencies": {
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.3",
+    "typescript": "6.0.2",
+    "vite": "8.1.4",
+    "vitest": "4.1.10"
+  }
+}

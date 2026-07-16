@@ -1,8 +1,8 @@
 # game
 
-当前状态：pre-alpha。这里还没有可运行游戏代码，也没有可安装依赖、可启动页面或可执行模拟。
+当前状态：pre-alpha。这里已经有独立 npm package、可启动的最小 React 工程入口，以及 typecheck、test 和 build 工具链；模拟、玩法、application/projection、存档和正式 UI 尚未实现。
 
-`game/` 是未来浏览器游戏实现的目录。架构决策上，它会成为一个独立 npm package，初期不启用 npm workspaces；本阶段只先保存实现规格文档，不创建 `package.json`、源码、配置或构建脚本。
+`game/` 是浏览器游戏实现目录，也是独立 npm package，初期不启用 npm workspaces。当前页面只用于验证 Vite、React 和 TypeScript 工具链，不声明已经存在可玩功能。
 
 ## 职责
 
@@ -22,8 +22,15 @@
 - [技术架构](docs/architecture.md)
 - [UI 视觉规则](docs/ui-style-guide.md)
 
-## 当前命令状态
+## 命令
 
-当前还没有 game build、dev 或 test 命令。根目录现有 `npm run build` 仍只表示 Quartz build，不代表游戏构建。
+从仓库根目录运行：
 
-本目录目前不声明已经存在的游戏功能；所有可玩功能、构建命令和测试命令都要等后续阶段创建实现后再补充。
+- 安装依赖：`npm --prefix game install`
+- 启动开发服务器：`npm --prefix game run dev`
+- 类型检查：`npm --prefix game run typecheck`
+- 运行测试：`npm --prefix game run test`
+- 构建游戏：`npm --prefix game run build`
+- 预览构建结果：`npm --prefix game run preview`
+
+根目录现有 `npm run build` 仍只表示 Quartz build，不代表游戏构建。游戏部署尚未接入现有 GitHub Pages workflow。
