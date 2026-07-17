@@ -20,4 +20,8 @@ export type {
   ScheduleEventResult,
 } from "./event-queue"
 
-export type { JsonPrimitive, JsonValue } from "./types"
+export type {
+  JsonPrimitive,
+  JsonValue,
+  ReadonlyJsonValue,
+} from "./types"

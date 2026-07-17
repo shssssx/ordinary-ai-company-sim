@@ -1,10 +1,10 @@
-import type { JsonValue } from "./types"
+import type { JsonValue, ReadonlyJsonValue } from "./types"
 
 export interface ScheduledEvent<TPayload extends JsonValue = JsonValue> {
   readonly dueDay: number
   readonly priority: number
   readonly sequenceId: number
-  readonly payload: TPayload
+  readonly payload: ReadonlyJsonValue<TPayload>
 }
 
 export interface ScheduleEventInput<TPayload extends JsonValue = JsonValue> {
@@ -30,6 +30,28 @@ export interface PopNextEventResult<TPayload extends JsonValue = JsonValue> {
 
 type PlainRecord = Record<PropertyKey, unknown>
 
+interface ScheduledEventOrder {
+  readonly dueDay: number
+  readonly priority: number
+  readonly sequenceId: number
+}
+
+interface ScheduledEventSnapshot<TPayload extends JsonValue>
+  extends ScheduledEventOrder {
+  readonly event: ScheduledEvent<TPayload>
+}
+
+interface EventQueueSnapshot<TPayload extends JsonValue> {
+  readonly events: readonly ScheduledEventSnapshot<TPayload>[]
+  readonly nextSequenceId: number
+}
+
+interface ScheduleEventInputSnapshot<TPayload extends JsonValue> {
+  readonly dueDay: number
+  readonly priority: number
+  readonly payload: TPayload
+}
+
 function isPlainRecord(value: unknown): value is PlainRecord {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false
@@ -37,6 +59,55 @@ function isPlainRecord(value: unknown): value is PlainRecord {
 
   const prototype = Object.getPrototypeOf(value)
   return prototype === Object.prototype || prototype === null
+}
+
+function readOwnEnumerableDataProperty(
+  value: PlainRecord,
+  key: string,
+  label: string,
+): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(value, key)
+  if (
+    descriptor === undefined ||
+    !descriptor.enumerable ||
+    !("value" in descriptor)
+  ) {
+    throw new TypeError(label + " must be an own enumerable data property")
+  }
+
+  return descriptor.value
+}
+
+function snapshotStandardArray(
+  value: unknown,
+  label: string,
+): readonly unknown[] {
+  if (
+    !Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Array.prototype
+  ) {
+    throw new TypeError(label + " must be a standard array")
+  }
+
+  const ownKeys = Reflect.ownKeys(value)
+  if (ownKeys.length !== value.length + 1 || !ownKeys.includes("length")) {
+    throw new TypeError(label + " must not contain holes or extra properties")
+  }
+
+  const elements: unknown[] = []
+  for (let index = 0; index < value.length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
+    if (
+      descriptor === undefined ||
+      !descriptor.enumerable ||
+      !("value" in descriptor)
+    ) {
+      throw new TypeError(label + " must contain enumerable data properties")
+    }
+    elements.push(descriptor.value)
+  }
+
+  return elements
 }
 
 function assertSafeInteger(value: unknown, label: string): asserts value is number {
@@ -85,21 +156,9 @@ function assertJsonValue(
   ancestors.add(value)
 
   if (Array.isArray(value)) {
-    const ownKeys = Reflect.ownKeys(value)
-    if (ownKeys.length !== value.length + 1 || !ownKeys.includes("length")) {
-      throw new TypeError("JSON arrays must not contain holes or extra properties")
-    }
-
-    for (let index = 0; index < value.length; index += 1) {
-      const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
-      if (
-        descriptor === undefined ||
-        !descriptor.enumerable ||
-        !("value" in descriptor)
-      ) {
-        throw new TypeError("JSON arrays must contain plain values")
-      }
-      assertJsonValue(descriptor.value, ancestors)
+    const elements = snapshotStandardArray(value, "JSON arrays")
+    for (const element of elements) {
+      assertJsonValue(element, ancestors)
     }
 
     ancestors.delete(value)
@@ -129,6 +188,12 @@ function assertJsonValue(
   ancestors.delete(value)
 }
 
+function readonlyJsonValueView<TValue extends JsonValue>(
+  value: TValue,
+): ReadonlyJsonValue<TValue> {
+  return value as ReadonlyJsonValue<TValue>
+}
+
 function compareNumbers(left: number, right: number): number {
   if (left < right) {
     return -1
@@ -140,8 +205,8 @@ function compareNumbers(left: number, right: number): number {
 }
 
 function compareScheduledEvents(
-  left: ScheduledEvent,
-  right: ScheduledEvent,
+  left: ScheduledEventOrder,
+  right: ScheduledEventOrder,
 ): number {
   return (
     compareNumbers(left.dueDay, right.dueDay) ||
@@ -150,33 +215,75 @@ function compareScheduledEvents(
   )
 }
 
-function assertScheduledEvent(event: unknown): asserts event is ScheduledEvent {
+function snapshotScheduledEvent<TPayload extends JsonValue>(
+  event: unknown,
+): ScheduledEventSnapshot<TPayload> {
   if (!isPlainRecord(event)) {
     throw new TypeError("Scheduled events must be plain objects")
   }
 
-  assertNonNegativeSafeInteger(event.dueDay, "Event dueDay")
-  assertSafeInteger(event.priority, "Event priority")
-  assertNonNegativeSafeInteger(event.sequenceId, "Event sequenceId")
-  assertJsonValue(event.payload)
+  const dueDay = readOwnEnumerableDataProperty(
+    event,
+    "dueDay",
+    "Event dueDay",
+  )
+  const priority = readOwnEnumerableDataProperty(
+    event,
+    "priority",
+    "Event priority",
+  )
+  const sequenceId = readOwnEnumerableDataProperty(
+    event,
+    "sequenceId",
+    "Event sequenceId",
+  )
+  const payload = readOwnEnumerableDataProperty(
+    event,
+    "payload",
+    "Event payload",
+  )
+
+  assertNonNegativeSafeInteger(dueDay, "Event dueDay")
+  assertSafeInteger(priority, "Event priority")
+  assertNonNegativeSafeInteger(sequenceId, "Event sequenceId")
+  assertJsonValue(payload)
+
+  return {
+    event: event as unknown as ScheduledEvent<TPayload>,
+    dueDay,
+    priority,
+    sequenceId,
+  }
 }
 
-function assertEventQueue<TPayload extends JsonValue>(
+function snapshotEventQueue<TPayload extends JsonValue>(
   queue: EventQueue<TPayload>,
-): void {
-  if (!isPlainRecord(queue) || !Array.isArray(queue.events)) {
-    throw new TypeError("Event queue must be a plain object with an events array")
+): EventQueueSnapshot<TPayload> {
+  if (!isPlainRecord(queue)) {
+    throw new TypeError("Event queue must be a plain object")
   }
 
-  assertNonNegativeSafeInteger(queue.nextSequenceId, "nextSequenceId")
+  const eventsValue = readOwnEnumerableDataProperty(
+    queue,
+    "events",
+    "Event queue events",
+  )
+  const nextSequenceId = readOwnEnumerableDataProperty(
+    queue,
+    "nextSequenceId",
+    "nextSequenceId",
+  )
+  const eventValues = snapshotStandardArray(eventsValue, "Event queue events")
+  assertNonNegativeSafeInteger(nextSequenceId, "nextSequenceId")
 
   const seenSequenceIds = new Set<number>()
-  let previous: ScheduledEvent | undefined
+  const events: ScheduledEventSnapshot<TPayload>[] = []
+  let previous: ScheduledEventSnapshot<TPayload> | undefined
 
-  for (const event of queue.events) {
-    assertScheduledEvent(event)
+  for (const eventValue of eventValues) {
+    const event = snapshotScheduledEvent<TPayload>(eventValue)
 
-    if (event.sequenceId >= queue.nextSequenceId) {
+    if (event.sequenceId >= nextSequenceId) {
       throw new RangeError("Event sequenceId must be less than nextSequenceId")
     }
     if (seenSequenceIds.has(event.sequenceId)) {
@@ -187,13 +294,19 @@ function assertEventQueue<TPayload extends JsonValue>(
     }
 
     seenSequenceIds.add(event.sequenceId)
+    events.push(event)
     previous = event
+  }
+
+  return {
+    events,
+    nextSequenceId,
   }
 }
 
-function assertScheduleEventInput(
-  input: ScheduleEventInput,
-): asserts input is ScheduleEventInput {
+function snapshotScheduleEventInput<TPayload extends JsonValue>(
+  input: ScheduleEventInput<TPayload>,
+): ScheduleEventInputSnapshot<TPayload> {
   if (!isPlainRecord(input)) {
     throw new TypeError("Scheduled event input must be a plain object")
   }
@@ -201,9 +314,31 @@ function assertScheduleEventInput(
     throw new TypeError("Scheduled event input must not provide sequenceId")
   }
 
-  assertNonNegativeSafeInteger(input.dueDay, "Event dueDay")
-  assertSafeInteger(input.priority, "Event priority")
-  assertJsonValue(input.payload)
+  const dueDay = readOwnEnumerableDataProperty(
+    input,
+    "dueDay",
+    "Event dueDay",
+  )
+  const priority = readOwnEnumerableDataProperty(
+    input,
+    "priority",
+    "Event priority",
+  )
+  const payload = readOwnEnumerableDataProperty(
+    input,
+    "payload",
+    "Event payload",
+  )
+
+  assertNonNegativeSafeInteger(dueDay, "Event dueDay")
+  assertSafeInteger(priority, "Event priority")
+  assertJsonValue(payload)
+
+  return {
+    dueDay,
+    priority,
+    payload: payload as TPayload,
+  }
 }
 
 export function createEventQueue<
@@ -219,24 +354,32 @@ export function scheduleEvent<TPayload extends JsonValue>(
   queue: EventQueue<TPayload>,
   input: ScheduleEventInput<TPayload>,
 ): ScheduleEventResult<TPayload> {
-  assertEventQueue(queue)
-  if (queue.nextSequenceId === Number.MAX_SAFE_INTEGER) {
+  const queueSnapshot = snapshotEventQueue(queue)
+  if (queueSnapshot.nextSequenceId === Number.MAX_SAFE_INTEGER) {
     throw new RangeError("Event sequenceId space is exhausted")
   }
-  assertScheduleEventInput(input)
+  const inputSnapshot = snapshotScheduleEventInput(input)
 
   const event: ScheduledEvent<TPayload> = {
-    dueDay: input.dueDay,
-    priority: input.priority,
-    sequenceId: queue.nextSequenceId,
-    payload: input.payload,
+    dueDay: inputSnapshot.dueDay,
+    priority: inputSnapshot.priority,
+    sequenceId: queueSnapshot.nextSequenceId,
+    payload: readonlyJsonValueView(inputSnapshot.payload),
   }
-  const events = [...queue.events, event].sort(compareScheduledEvents)
+  const events = [
+    ...queueSnapshot.events,
+    {
+      event,
+      dueDay: inputSnapshot.dueDay,
+      priority: inputSnapshot.priority,
+      sequenceId: queueSnapshot.nextSequenceId,
+    },
+  ].sort(compareScheduledEvents)
 
   return {
     queue: {
-      events,
-      nextSequenceId: queue.nextSequenceId + 1,
+      events: events.map((entry) => entry.event),
+      nextSequenceId: queueSnapshot.nextSequenceId + 1,
     },
     event,
   }
@@ -245,25 +388,25 @@ export function scheduleEvent<TPayload extends JsonValue>(
 export function peekNextEvent<TPayload extends JsonValue>(
   queue: EventQueue<TPayload>,
 ): ScheduledEvent<TPayload> | undefined {
-  assertEventQueue(queue)
-  return queue.events[0]
+  const queueSnapshot = snapshotEventQueue(queue)
+  return queueSnapshot.events[0]?.event
 }
 
 export function popNextEvent<TPayload extends JsonValue>(
   queue: EventQueue<TPayload>,
 ): PopNextEventResult<TPayload> {
-  assertEventQueue(queue)
+  const queueSnapshot = snapshotEventQueue(queue)
 
-  const event = queue.events[0]
-  if (event === undefined) {
+  const first = queueSnapshot.events[0]
+  if (first === undefined) {
     return { queue, event: undefined }
   }
 
   return {
     queue: {
-      events: queue.events.slice(1),
-      nextSequenceId: queue.nextSequenceId,
+      events: queueSnapshot.events.slice(1).map((entry) => entry.event),
+      nextSequenceId: queueSnapshot.nextSequenceId,
     },
-    event,
+    event: first.event,
   }
 }

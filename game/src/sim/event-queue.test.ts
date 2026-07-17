@@ -79,6 +79,129 @@ describe("scheduled event queue", () => {
     expect(result.queue.events).not.toBe(initial.events)
   })
 
+  it("rejects a changing payload getter without invoking it", () => {
+    const queue = createEventQueue<JsonValue>()
+    const before = JSON.stringify(queue)
+    let payloadReads = 0
+    const eventInput = {
+      dueDay: 1,
+      priority: 0,
+      get payload(): JsonValue {
+        payloadReads += 1
+        return payloadReads === 1 ? null : Infinity
+      },
+    }
+
+    expect(() => scheduleEvent(queue, eventInput)).toThrow()
+    expect(payloadReads).toBe(0)
+    expect(JSON.stringify(queue)).toBe(before)
+  })
+
+  it.each(["dueDay", "priority"] as const)(
+    "rejects a schedule input %s getter without invoking it",
+    (field) => {
+      const queue = createEventQueue<null>()
+      const eventInput = { dueDay: 1, priority: 0, payload: null }
+      let reads = 0
+
+      Object.defineProperty(eventInput, field, {
+        enumerable: true,
+        get() {
+          reads += 1
+          return field === "dueDay" ? 1 : 0
+        },
+      })
+
+      expect(() => scheduleEvent(queue, eventInput)).toThrow()
+      expect(reads).toBe(0)
+      expect(queue).toEqual({ events: [], nextSequenceId: 0 })
+    },
+  )
+
+  it.each(["events", "nextSequenceId"] as const)(
+    "rejects an event queue %s getter without invoking it",
+    (field) => {
+      const queue: EventQueue = { events: [], nextSequenceId: 0 }
+      let reads = 0
+
+      Object.defineProperty(queue, field, {
+        enumerable: true,
+        get() {
+          reads += 1
+          return field === "events" ? [] : 0
+        },
+      })
+
+      expect(() => peekNextEvent(queue)).toThrow()
+      expect(reads).toBe(0)
+    },
+  )
+
+  it.each(["dueDay", "priority", "sequenceId", "payload"] as const)(
+    "rejects a scheduled event %s accessor without invoking it",
+    (field) => {
+      const event = {
+        dueDay: 1,
+        priority: 0,
+        sequenceId: 0,
+        payload: null,
+      }
+      let reads = 0
+
+      Object.defineProperty(event, field, {
+        enumerable: true,
+        get() {
+          reads += 1
+          return field === "payload" ? null : 0
+        },
+      })
+
+      const queue = {
+        events: [event],
+        nextSequenceId: 1,
+      } as EventQueue<null>
+
+      expect(() => peekNextEvent(queue)).toThrow()
+      expect(reads).toBe(0)
+    },
+  )
+
+  it("exposes returned payloads as recursive readonly views", () => {
+    type MutablePayload = {
+      nested: {
+        value: number
+        items: number[]
+      }
+    }
+
+    const payload: MutablePayload = {
+      nested: {
+        value: 1,
+        items: [1],
+      },
+    }
+    const scheduled = scheduleEvent(createEventQueue<MutablePayload>(), {
+      dueDay: 1,
+      priority: 0,
+      payload,
+    })
+    const peeked = peekNextEvent(scheduled.queue)
+    const popped = popNextEvent(scheduled.queue)
+
+    expect(scheduled.event.payload).toBe(payload)
+    expect(peeked?.payload).toBe(payload)
+    expect(popped.event?.payload).toBe(payload)
+
+    if (false) {
+      // @ts-expect-error -- public event payload objects are recursively readonly.
+      scheduled.event.payload.nested.value = 2
+      // @ts-expect-error -- public queue payload arrays do not expose mutable methods.
+      scheduled.queue.events[0]?.payload.nested.items.push(2)
+      // @ts-expect-error -- public pop results cannot replace readonly nested fields.
+      popped.event!.payload.nested = { value: 2, items: [] }
+    }
+  })
+
   it("produces identical state for identical scheduling input", () => {
     const inputs = [
       input("one", 9, -1),
@@ -205,6 +328,63 @@ describe("scheduled event queue", () => {
     } as unknown as ScheduleEventInput<null>
 
     expect(() => scheduleEvent(createEventQueue<null>(), eventInput)).toThrow()
+  })
+
+  it("rejects Array subclass payloads", () => {
+    class PayloadArray extends Array<JsonValue> {}
+
+    const payload = new PayloadArray()
+    payload.push({ kind: "subclass" })
+
+    expect(() =>
+      scheduleEvent(createEventQueue<PayloadArray>(), {
+        dueDay: 1,
+        priority: 0,
+        payload,
+      }),
+    ).toThrow()
+  })
+
+  it("rejects payload arrays with a replaced prototype", () => {
+    const payload: JsonValue[] = [null]
+    Object.setPrototypeOf(payload, null)
+
+    expect(() =>
+      scheduleEvent(createEventQueue<JsonValue[]>(), {
+        dueDay: 1,
+        priority: 0,
+        payload,
+      }),
+    ).toThrow()
+  })
+
+  it("accepts dense standard array payloads without copying them", () => {
+    const payload = [{ nested: [1, true, null] }] as const
+    const result = scheduleEvent(createEventQueue<typeof payload>(), {
+      dueDay: 1,
+      priority: 0,
+      payload,
+    })
+
+    expect(result.event.payload).toBe(payload)
+  })
+
+  it("rejects an event queue backed by an Array subclass", () => {
+    class EventArray extends Array<{
+      readonly dueDay: number
+      readonly priority: number
+      readonly sequenceId: number
+      readonly payload: null
+    }> {}
+
+    const events = new EventArray()
+    events.push({ dueDay: 1, priority: 0, sequenceId: 0, payload: null })
+    const queue = {
+      events,
+      nextSequenceId: 1,
+    } satisfies EventQueue<null>
+
+    expect(() => peekNextEvent(queue)).toThrow()
   })
 
   it("rejects payloads that are not finite, plain, acyclic JSON values", () => {
