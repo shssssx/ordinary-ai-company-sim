@@ -71,6 +71,24 @@ const NON_NEGATIVE_PATHS = [
 
 const DATA_QUALITY_KEYS = NESTED_KEYS.dataQuality
 
+const INHERITED_FIELD_CASES = [
+  { boundary: "root", field: "cash" },
+  { boundary: "root", field: "compute" },
+  { boundary: "root", field: "dataQuality" },
+  { boundary: "root", field: "researchCapacity" },
+  { boundary: "root", field: "reputation" },
+  { boundary: "root", field: "users" },
+  { boundary: "compute", field: "capacity" },
+  { boundary: "compute", field: "occupied" },
+  { boundary: "dataQuality", field: "domainCoverage" },
+  { boundary: "dataQuality", field: "cleaningQuality" },
+  { boundary: "dataQuality", field: "contaminationRisk" },
+  { boundary: "dataQuality", field: "legalRisk" },
+  { boundary: "dataQuality", field: "feedbackQuality" },
+  { boundary: "researchCapacity", field: "capacity" },
+  { boundary: "researchCapacity", field: "occupied" },
+] as const
+
 function validInput(): MutableCompanyResourceStateInput {
   return {
     cash: 1_000_000,
@@ -385,34 +403,45 @@ describe("company resource state", () => {
     },
   )
 
-  it.each(["root", "compute", "dataQuality", "researchCapacity"] as const)(
-    "does not accept an inherited field at the %s boundary",
-    (boundary) => {
+  it.each(INHERITED_FIELD_CASES)(
+    "does not accept inherited $boundary.$field on an ordinary object",
+    ({ boundary, field }) => {
       const input = validInput()
-      const original =
+      const target =
         boundary === "root"
-          ? (input as unknown as Record<string, unknown>)
+          ? (input as unknown as Record<PropertyKey, unknown>)
           : nestedObject(input, boundary)
-      const field = boundary === "root" ? "cash" : NESTED_KEYS[boundary][0]
-      const inherited = Object.create({ [field]: original[field] }) as Record<
-        string,
-        unknown
-      >
-      for (const key of Reflect.ownKeys(original)) {
-        if (key !== field) {
-          const descriptor = Object.getOwnPropertyDescriptor(original, key)
-          if (descriptor !== undefined) {
-            Object.defineProperty(inherited, key, descriptor)
-          }
+      const inheritedValue = target[field]
+      const previousDescriptor = Object.getOwnPropertyDescriptor(
+        Object.prototype,
+        field,
+      )
+
+      try {
+        Object.defineProperty(Object.prototype, field, {
+          configurable: true,
+          enumerable: true,
+          value: inheritedValue,
+          writable: true,
+        })
+        expect(Object.getPrototypeOf(target)).toBe(Object.prototype)
+        expect(Reflect.deleteProperty(target, field)).toBe(true)
+        expect(Object.getPrototypeOf(target)).toBe(Object.prototype)
+        expect(Object.hasOwn(target, field)).toBe(false)
+        expect(target[field]).toBe(inheritedValue)
+
+        expect(() => createFromUnknown(input)).toThrow()
+      } finally {
+        if (previousDescriptor === undefined) {
+          Reflect.deleteProperty(Object.prototype, field)
+        } else {
+          Object.defineProperty(Object.prototype, field, previousDescriptor)
         }
       }
 
-      if (boundary === "root") {
-        expect(() => createFromUnknown(inherited)).toThrow()
-      } else {
-        replaceNested(input, boundary, inherited)
-        expect(() => createFromUnknown(input)).toThrow()
-      }
+      expect(Object.getOwnPropertyDescriptor(Object.prototype, field)).toEqual(
+        previousDescriptor,
+      )
     },
   )
 
@@ -530,19 +559,151 @@ describe("company resource state", () => {
     expect(state.cash).toBe(originalCash)
   })
 
+  it("never normally rereads any nested input after descriptor snapshots", () => {
+    const input = validInput()
+    const expected = structuredClone(input)
+    const getReads: Record<NestedKey, number> = {
+      compute: 0,
+      dataQuality: 0,
+      researchCapacity: 0,
+    }
+
+    for (const boundary of Object.keys(NESTED_KEYS) as readonly NestedKey[]) {
+      const target = input[boundary]
+      replaceNested(
+        input,
+        boundary,
+        new Proxy(target, {
+          get() {
+            getReads[boundary] += 1
+            throw new Error("nested properties must not be read normally")
+          },
+        }),
+      )
+    }
+
+    const state = createCompanyResourceState(input)
+
+    expect(state).toEqual(expected)
+    expect(getReads).toEqual({
+      compute: 0,
+      dataQuality: 0,
+      researchCapacity: 0,
+    })
+  })
+
   it("snapshots all nested boundaries before validating primitive values", () => {
     const input = validInput()
     input.cash = -1
-    let descriptorOperations = 0
-    input.researchCapacity = new Proxy(input.researchCapacity, {
+    const descriptorOperations: string[] = []
+
+    for (const boundary of Object.keys(NESTED_KEYS) as readonly NestedKey[]) {
+      const target = input[boundary]
+      replaceNested(
+        input,
+        boundary,
+        new Proxy(target, {
+          get() {
+            throw new Error("nested properties must not be read normally")
+          },
+          getOwnPropertyDescriptor(current, property) {
+            if (typeof property === "string") {
+              descriptorOperations.push(`${boundary}.${property}`)
+            }
+            return Reflect.getOwnPropertyDescriptor(current, property)
+          },
+        }),
+      )
+    }
+
+    expect(() => createFromUnknown(input)).toThrow()
+    expect(new Set(descriptorOperations)).toEqual(
+      new Set([
+        "compute.capacity",
+        "compute.occupied",
+        "dataQuality.domainCoverage",
+        "dataQuality.cleaningQuality",
+        "dataQuality.contaminationRisk",
+        "dataQuality.legalRisk",
+        "dataQuality.feedbackQuality",
+        "researchCapacity.capacity",
+        "researchCapacity.occupied",
+      ]),
+    )
+  })
+
+  it("keeps every nested snapshot stable across later boundary mutations", () => {
+    const input = validInput()
+    const computeTarget = input.compute
+    const dataQualityTarget = input.dataQuality
+    const researchCapacityTarget = input.researchCapacity
+    const expectedCompute = { ...computeTarget }
+    const expectedDataQuality = { ...dataQualityTarget }
+    const expectedResearchCapacity = { ...researchCapacityTarget }
+    const getReads: Record<NestedKey, number> = {
+      compute: 0,
+      dataQuality: 0,
+      researchCapacity: 0,
+    }
+
+    input.compute = new Proxy(computeTarget, {
+      get() {
+        getReads.compute += 1
+        throw new Error("nested properties must not be read normally")
+      },
+    })
+    input.dataQuality = new Proxy(dataQualityTarget, {
+      get() {
+        getReads.dataQuality += 1
+        throw new Error("nested properties must not be read normally")
+      },
       getOwnPropertyDescriptor(target, property) {
-        descriptorOperations += 1
+        if (property === "domainCoverage") {
+          computeTarget.capacity = 1
+          computeTarget.occupied = 1
+        }
+        return Reflect.getOwnPropertyDescriptor(target, property)
+      },
+    })
+    input.researchCapacity = new Proxy(researchCapacityTarget, {
+      get() {
+        getReads.researchCapacity += 1
+        throw new Error("nested properties must not be read normally")
+      },
+      getOwnPropertyDescriptor(target, property) {
+        if (property === "capacity") {
+          dataQualityTarget.domainCoverage = 1
+          dataQualityTarget.cleaningQuality = 1
+          dataQualityTarget.contaminationRisk = 1
+          dataQualityTarget.legalRisk = 1
+          dataQualityTarget.feedbackQuality = 1
+        }
+        if (property === "occupied") {
+          researchCapacityTarget.capacity = 5
+        }
         return Reflect.getOwnPropertyDescriptor(target, property)
       },
     })
 
-    expect(() => createFromUnknown(input)).toThrow()
-    expect(descriptorOperations).toBeGreaterThan(0)
+    const state = createCompanyResourceState(input)
+
+    expect(computeTarget).toEqual({ capacity: 1, occupied: 1 })
+    expect(dataQualityTarget).toEqual({
+      domainCoverage: 1,
+      cleaningQuality: 1,
+      contaminationRisk: 1,
+      legalRisk: 1,
+      feedbackQuality: 1,
+    })
+    expect(researchCapacityTarget).toEqual({ capacity: 5, occupied: 5 })
+    expect(state.compute).toEqual(expectedCompute)
+    expect(state.dataQuality).toEqual(expectedDataQuality)
+    expect(state.researchCapacity).toEqual(expectedResearchCapacity)
+    expect(getReads).toEqual({
+      compute: 0,
+      dataQuality: 0,
+      researchCapacity: 0,
+    })
   })
 
   it("does not mutate inputs or their property descriptors", () => {
