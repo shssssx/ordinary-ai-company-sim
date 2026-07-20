@@ -25,3 +25,12 @@ export type {
   JsonValue,
   ReadonlyJsonValue,
 } from "./types"
+
+export { createCompanyResourceState } from "./company-resource-state"
+export type {
+  CompanyResourceState,
+  CompanyResourceStateInput,
+  ComputeResourceState,
+  DataQualityState,
+  ResearchCapacityState,
+} from "./company-resource-state"
