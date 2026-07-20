@@ -404,33 +404,95 @@ describe("company resource state", () => {
   )
 
   it.each(INHERITED_FIELD_CASES)(
-    "does not accept inherited $boundary.$field on an ordinary object",
+    "does not accept inherited $field at the $boundary boundary",
     ({ boundary, field }) => {
       const input = validInput()
       const target =
         boundary === "root"
           ? (input as unknown as Record<PropertyKey, unknown>)
           : nestedObject(input, boundary)
-      const inheritedValue = target[field]
+      const expectedOwnKeys =
+        boundary === "root" ? ROOT_KEYS : NESTED_KEYS[boundary]
+      const originalOwnKeys = Reflect.ownKeys(target)
+      const originalDescriptor = Object.getOwnPropertyDescriptor(
+        target,
+        field,
+      )
+
+      expect(Object.getPrototypeOf(target)).toBe(Object.prototype)
+      expect(originalOwnKeys).toEqual(expectedOwnKeys)
+      expect(originalDescriptor).toBeDefined()
+      expect(originalDescriptor).toHaveProperty("value")
+      expect(originalDescriptor?.configurable).toBe(true)
+      if (
+        originalDescriptor === undefined ||
+        !("value" in originalDescriptor)
+      ) {
+        throw new Error("inherited-field fixture requires a data property")
+      }
+
+      expect(Reflect.deleteProperty(target, field)).toBe(true)
+      expect(Object.isExtensible(target)).toBe(true)
+      expect(Object.getPrototypeOf(target)).toBe(Object.prototype)
+      expect(Object.getOwnPropertyDescriptor(target, field)).toBeUndefined()
+
+      const proxy = new Proxy(target, {
+        ownKeys() {
+          return originalOwnKeys
+        },
+        getOwnPropertyDescriptor(innerTarget, key) {
+          if (key === field) {
+            return undefined
+          }
+
+          return Object.getOwnPropertyDescriptor(innerTarget, key)
+        },
+        get() {
+          throw new Error("ordinary property reads are not allowed")
+        },
+      })
+
+      expect(Object.getPrototypeOf(proxy)).toBe(Object.prototype)
+      expect(Array.isArray(proxy)).toBe(false)
+      expect(Reflect.ownKeys(proxy)).toEqual(expectedOwnKeys)
+      expect(Object.getOwnPropertyDescriptor(proxy, field)).toBeUndefined()
+      expect(() => Reflect.get(proxy, field)).toThrow()
+      for (const key of originalOwnKeys) {
+        if (key !== field) {
+          expect(Object.getOwnPropertyDescriptor(proxy, key)).toEqual(
+            Object.getOwnPropertyDescriptor(target, key),
+          )
+        }
+      }
+
+      let candidate: unknown = proxy
+      if (boundary !== "root") {
+        replaceNested(input, boundary, proxy)
+        candidate = input
+        expect(Object.getPrototypeOf(input)).toBe(Object.prototype)
+        expect(Reflect.ownKeys(input)).toEqual(ROOT_KEYS)
+      }
+
       const previousDescriptor = Object.getOwnPropertyDescriptor(
         Object.prototype,
         field,
       )
+      const inheritedDescriptor: PropertyDescriptor = {
+        configurable: true,
+        enumerable: true,
+        value: originalDescriptor.value,
+        writable: true,
+      }
 
       try {
-        Object.defineProperty(Object.prototype, field, {
-          configurable: true,
-          enumerable: true,
-          value: inheritedValue,
-          writable: true,
-        })
-        expect(Object.getPrototypeOf(target)).toBe(Object.prototype)
-        expect(Reflect.deleteProperty(target, field)).toBe(true)
-        expect(Object.getPrototypeOf(target)).toBe(Object.prototype)
-        expect(Object.hasOwn(target, field)).toBe(false)
-        expect(target[field]).toBe(inheritedValue)
+        Object.defineProperty(Object.prototype, field, inheritedDescriptor)
+        expect(
+          Object.getOwnPropertyDescriptor(Object.prototype, field),
+        ).toEqual(inheritedDescriptor)
+        expect(Reflect.ownKeys(proxy)).toEqual(expectedOwnKeys)
+        expect(Object.getOwnPropertyDescriptor(proxy, field)).toBeUndefined()
 
-        expect(() => createFromUnknown(input)).toThrow()
+        expect(() => createFromUnknown(candidate)).toThrow()
       } finally {
         if (previousDescriptor === undefined) {
           Reflect.deleteProperty(Object.prototype, field)
