@@ -34,3 +34,9 @@ export type {
   DataQualityState,
   ResearchCapacityState,
 } from "./company-resource-state"
+
+export { createHiddenCapabilityVector } from "./hidden-capability-vector"
+export type {
+  HiddenCapabilityVector,
+  HiddenCapabilityVectorInput,
+} from "./hidden-capability-vector"
