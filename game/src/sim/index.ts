@@ -46,3 +46,9 @@ export type {
   CheckpointState,
   CheckpointStateInput,
 } from "./checkpoint-state"
+
+export { createTrainingTaskState } from "./training-task-state"
+export type {
+  TrainingTaskState,
+  TrainingTaskStateInput,
+} from "./training-task-state"
