@@ -40,3 +40,9 @@ export type {
   HiddenCapabilityVector,
   HiddenCapabilityVectorInput,
 } from "./hidden-capability-vector"
+
+export { createCheckpointState } from "./checkpoint-state"
+export type {
+  CheckpointState,
+  CheckpointStateInput,
+} from "./checkpoint-state"
